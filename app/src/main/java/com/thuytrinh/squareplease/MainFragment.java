@@ -28,6 +28,7 @@ import java.io.IOException;
 import rx.Observable;
 import rx.Subscriber;
 import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Action0;
 import rx.functions.Action1;
 import rx.schedulers.Schedulers;
 
@@ -39,18 +40,22 @@ public class MainFragment extends Fragment {
       MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
       MediaStore.Images.Media.DATA
   };
+  private View choosePhotoButton;
+  private View progressBar;
 
   @Override
   public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
     View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-    View choosePhotoButton = rootView.findViewById(R.id.choosePhotoButton);
+    choosePhotoButton = rootView.findViewById(R.id.choosePhotoButton);
     choosePhotoButton.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View v) {
         choosePhoto();
       }
     });
+
+    progressBar = rootView.findViewById(R.id.progressBar);
 
     return rootView;
   }
@@ -61,6 +66,9 @@ public class MainFragment extends Fragment {
     if (resultCode != Activity.RESULT_OK) {
       return;
     }
+
+    progressBar.setVisibility(View.VISIBLE);
+    choosePhotoButton.setVisibility(View.GONE);
 
     final Uri photoUri = data.getData();
     final Context appContext = getActivity().getApplicationContext();
@@ -114,6 +122,13 @@ public class MainFragment extends Fragment {
         })
         .subscribeOn(Schedulers.newThread())
         .observeOn(AndroidSchedulers.mainThread())
+        .finallyDo(new Action0() {
+          @Override
+          public void call() {
+            progressBar.setVisibility(View.GONE);
+            choosePhotoButton.setVisibility(View.VISIBLE);
+          }
+        })
         .subscribe(new Action1<Uri>() {
           @Override
           public void call(Uri squarePhotoUri) {
