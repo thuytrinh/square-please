@@ -74,8 +74,7 @@ public class MainFragment extends Fragment {
       return;
     }
 
-    progressBar.setVisibility(View.VISIBLE);
-    choosePhotoButton.setVisibility(View.GONE);
+    showProgressBar();
 
     final Uri photoUri = data.getData();
     final Context appContext = getActivity().getApplicationContext();
@@ -132,18 +131,13 @@ public class MainFragment extends Fragment {
         .finallyDo(new Action0() {
           @Override
           public void call() {
-            progressBar.setVisibility(View.GONE);
-            choosePhotoButton.setVisibility(View.VISIBLE);
+            dismissProgressBar();
           }
         })
         .subscribe(new Action1<Uri>() {
           @Override
           public void call(Uri squarePhotoUri) {
-            Intent shareIntent = new Intent();
-            shareIntent.setAction(Intent.ACTION_SEND);
-            shareIntent.putExtra(Intent.EXTRA_STREAM, squarePhotoUri);
-            shareIntent.setType("image/*");
-            startActivity(shareIntent);
+            sharePhoto(squarePhotoUri);
           }
         }, new Action1<Throwable>() {
           @Override
@@ -155,6 +149,24 @@ public class MainFragment extends Fragment {
             }
           }
         });
+  }
+
+  private void showProgressBar() {
+    progressBar.setVisibility(View.VISIBLE);
+    choosePhotoButton.setVisibility(View.GONE);
+  }
+
+  private void dismissProgressBar() {
+    progressBar.setVisibility(View.GONE);
+    choosePhotoButton.setVisibility(View.VISIBLE);
+  }
+
+  private void sharePhoto(Uri photoUri) {
+    Intent shareIntent = new Intent();
+    shareIntent.setAction(Intent.ACTION_SEND);
+    shareIntent.putExtra(Intent.EXTRA_STREAM, photoUri);
+    shareIntent.setType("image/*");
+    startActivity(shareIntent);
   }
 
   private void choosePhoto() {
