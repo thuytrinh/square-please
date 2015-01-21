@@ -27,10 +27,12 @@ import java.io.IOException;
 
 import rx.Observable;
 import rx.Subscriber;
+import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.functions.Action0;
 import rx.functions.Action1;
 import rx.schedulers.Schedulers;
+import rx.subjects.BehaviorSubject;
 
 public class MainFragment extends Fragment {
   private static final int RC_PICK_PHOTO = 0;
@@ -41,8 +43,8 @@ public class MainFragment extends Fragment {
       MediaStore.Images.Media.DATA
   };
 
-  private View choosePhotoButton;
-  private View progressBar;
+  private final ViewModel viewModel = new ViewModel();
+  private Subscription isBusySubscription;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -54,7 +56,7 @@ public class MainFragment extends Fragment {
   public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
     View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-    choosePhotoButton = rootView.findViewById(R.id.choosePhotoButton);
+    final View choosePhotoButton = rootView.findViewById(R.id.choosePhotoButton);
     choosePhotoButton.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View v) {
@@ -62,9 +64,26 @@ public class MainFragment extends Fragment {
       }
     });
 
-    progressBar = rootView.findViewById(R.id.progressBar);
+    final View progressBar = rootView.findViewById(R.id.progressBar);
+
+    isBusySubscription = viewModel.isBusy().subscribe(new Action1<Boolean>() {
+      @Override
+      public void call(Boolean value) {
+        progressBar.setVisibility(value ? View.VISIBLE : View.GONE);
+        choosePhotoButton.setVisibility(value ? View.GONE : View.VISIBLE);
+      }
+    });
 
     return rootView;
+  }
+
+  @Override
+  public void onDestroyView() {
+    if (isBusySubscription != null) {
+      isBusySubscription.unsubscribe();
+    }
+
+    super.onDestroyView();
   }
 
   @Override
@@ -74,92 +93,29 @@ public class MainFragment extends Fragment {
       return;
     }
 
-    showProgressBar();
-
     final Uri photoUri = data.getData();
-    final Context appContext = getActivity().getApplicationContext();
-    Observable
-        .create(new Observable.OnSubscribe<Uri>() {
-          @Override
-          public void call(Subscriber<? super Uri> subscriber) {
-            Cursor photoCursor = getActivity().getContentResolver().query(
-                photoUri,
-                PHOTO_PROJECTION,
-                null, null, null
-            );
-
-            if (!photoCursor.moveToFirst()) {
-              subscriber.onError(new FileNotFoundException());
-              return;
-            }
-
-            String photoPath = photoCursor.getString(photoCursor.getColumnIndex(MediaStore.Images.Media.DATA));
-            if (TextUtils.isEmpty(photoPath)) {
-              subscriber.onError(new FileNotFoundException());
-              return;
-            }
-
-            Bitmap originalPhoto = BitmapFactory.decodeFile(photoPath);
-            int size = Math.max(originalPhoto.getWidth(), originalPhoto.getHeight());
-            Bitmap squareBitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-
-            Canvas canvas = new Canvas(squareBitmap);
-            canvas.drawColor(getResources().getColor(android.R.color.white));
-
-            float x = Math.abs(squareBitmap.getWidth() - originalPhoto.getWidth()) * 0.5f;
-            float y = Math.abs(squareBitmap.getHeight() - originalPhoto.getHeight()) * 0.5f;
-            Paint paint = new Paint();
-            paint.setAntiAlias(true);
-            canvas.drawBitmap(originalPhoto, x, y, paint);
-
-            String name = String.format("square_pls_%d.png", System.currentTimeMillis());
-            File squareBitmapFile = new File(getActivity().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name);
-            try {
-              FileOutputStream stream = new FileOutputStream(squareBitmapFile);
-              squareBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-              stream.close();
-            } catch (IOException e) {
-              subscriber.onError(e);
-              return;
-            }
-
-            subscriber.onNext(Uri.fromFile(squareBitmapFile));
-            subscriber.onCompleted();
-          }
-        })
-        .subscribeOn(Schedulers.newThread())
-        .observeOn(AndroidSchedulers.mainThread())
-        .finallyDo(new Action0() {
-          @Override
-          public void call() {
-            dismissProgressBar();
-          }
-        })
-        .subscribe(new Action1<Uri>() {
-          @Override
-          public void call(Uri squarePhotoUri) {
-            sharePhoto(squarePhotoUri);
-          }
-        }, new Action1<Throwable>() {
-          @Override
-          public void call(Throwable throwable) {
-            if (throwable instanceof FileNotFoundException) {
-              Toast.makeText(appContext, "Failed to load image", Toast.LENGTH_SHORT).show();
-            } else {
-              Toast.makeText(appContext, "Unexpected error", Toast.LENGTH_SHORT).show();
-            }
-          }
-        });
+    viewModel.makeSquare(getActivity().getApplicationContext(), photoUri)
+        .subscribe(
+            new Action1<Uri>() {
+              @Override
+              public void call(Uri squarePhotoUri) {
+                sharePhoto(squarePhotoUri);
+              }
+            },
+            new Action1<Throwable>() {
+              @Override
+              public void call(Throwable throwable) {
+                showError(throwable);
+              }
+            });
   }
 
-  private void showProgressBar() {
-    progressBar.setVisibility(View.VISIBLE);
-    choosePhotoButton.setVisibility(View.GONE);
-  }
-
-  private void dismissProgressBar() {
-    progressBar.setVisibility(View.GONE);
-    choosePhotoButton.setVisibility(View.VISIBLE);
+  private void showError(Throwable throwable) {
+    if (throwable instanceof FileNotFoundException) {
+      Toast.makeText(getActivity(), "Failed to load image", Toast.LENGTH_SHORT).show();
+    } else {
+      Toast.makeText(getActivity(), "Unexpected error", Toast.LENGTH_SHORT).show();
+    }
   }
 
   private void sharePhoto(Uri photoUri) {
@@ -174,5 +130,74 @@ public class MainFragment extends Fragment {
     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
     intent.setType("image/*");
     startActivityForResult(intent, RC_PICK_PHOTO);
+  }
+
+  public static class ViewModel {
+    private final BehaviorSubject<Boolean> isBusy = BehaviorSubject.create(false);
+
+    public Observable<Uri> makeSquare(final Context context, final Uri photoUri) {
+      isBusy.onNext(true);
+      return Observable
+          .create(new Observable.OnSubscribe<Uri>() {
+            @Override
+            public void call(Subscriber<? super Uri> subscriber) {
+              Cursor photoCursor = context.getContentResolver().query(
+                  photoUri,
+                  PHOTO_PROJECTION,
+                  null, null, null
+              );
+
+              if (!photoCursor.moveToFirst()) {
+                subscriber.onError(new FileNotFoundException());
+                return;
+              }
+
+              String photoPath = photoCursor.getString(photoCursor.getColumnIndex(MediaStore.Images.Media.DATA));
+              if (TextUtils.isEmpty(photoPath)) {
+                subscriber.onError(new FileNotFoundException());
+                return;
+              }
+
+              Bitmap originalPhoto = BitmapFactory.decodeFile(photoPath);
+              int size = Math.max(originalPhoto.getWidth(), originalPhoto.getHeight());
+              Bitmap squareBitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+
+              Canvas canvas = new Canvas(squareBitmap);
+              canvas.drawColor(context.getResources().getColor(android.R.color.white));
+
+              float x = Math.abs(squareBitmap.getWidth() - originalPhoto.getWidth()) * 0.5f;
+              float y = Math.abs(squareBitmap.getHeight() - originalPhoto.getHeight()) * 0.5f;
+              Paint paint = new Paint();
+              paint.setAntiAlias(true);
+              canvas.drawBitmap(originalPhoto, x, y, paint);
+
+              String name = String.format("square_pls_%d.png", System.currentTimeMillis());
+              File squareBitmapFile = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name);
+              try {
+                FileOutputStream stream = new FileOutputStream(squareBitmapFile);
+                squareBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+                stream.close();
+              } catch (IOException e) {
+                subscriber.onError(e);
+                return;
+              }
+
+              subscriber.onNext(Uri.fromFile(squareBitmapFile));
+              subscriber.onCompleted();
+            }
+          })
+          .subscribeOn(Schedulers.newThread())
+          .observeOn(AndroidSchedulers.mainThread())
+          .finallyDo(new Action0() {
+            @Override
+            public void call() {
+              isBusy.onNext(false);
+            }
+          });
+    }
+
+    public Observable<Boolean> isBusy() {
+      return isBusy;
+    }
   }
 }
