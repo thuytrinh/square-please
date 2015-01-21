@@ -40,8 +40,15 @@ public class MainFragment extends Fragment {
       MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
       MediaStore.Images.Media.DATA
   };
+
   private View choosePhotoButton;
   private View progressBar;
+
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setRetainInstance(true);
+  }
 
   @Override
   public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
