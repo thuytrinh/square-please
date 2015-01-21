@@ -124,6 +124,7 @@ public class MainFragment extends Fragment {
             }
 
             subscriber.onNext(Uri.fromFile(squareBitmapFile));
+            subscriber.onCompleted();
           }
         })
         .subscribeOn(Schedulers.newThread())
