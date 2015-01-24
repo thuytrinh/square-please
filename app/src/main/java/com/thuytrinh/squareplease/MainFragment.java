@@ -127,7 +127,7 @@ public class MainFragment extends Fragment {
   }
 
   private void choosePhoto() {
-    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+    Intent intent = new Intent(Intent.ACTION_PICK);
     intent.setType("image/*");
     startActivityForResult(intent, RC_PICK_PHOTO);
   }
