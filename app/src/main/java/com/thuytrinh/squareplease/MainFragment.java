@@ -50,6 +50,14 @@ public class MainFragment extends Fragment {
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setRetainInstance(true);
+
+    Intent intent = getActivity().getIntent();
+    if (Intent.ACTION_SEND.equals(intent.getAction())) {
+      Uri photoUri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
+      if (photoUri != null) {
+        handlePhotoUri(photoUri);
+      }
+    }
   }
 
   @Override
@@ -94,6 +102,10 @@ public class MainFragment extends Fragment {
     }
 
     final Uri photoUri = data.getData();
+    handlePhotoUri(photoUri);
+  }
+
+  private void handlePhotoUri(Uri photoUri) {
     viewModel.makeSquare(getActivity().getApplicationContext(), photoUri)
         .subscribe(
             new Action1<Uri>() {
